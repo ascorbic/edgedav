@@ -46,18 +46,6 @@ async function handleUnlock(request: Request): Promise<Response> {
   return new Response(null, { status: 204 });
 }
 
-async function handleGet(request: Request): Promise<Response> {
-  const path = new URL(request.url).pathname;
-
-  if (path === "/readme.txt") {
-    const headers = new Headers();
-    headers.set("Content-Type", "text/plain");
-    return new Response("hello world", { status: 200, headers: headers });
-  } else {
-    return new Response("Not Found", { status: 404 });
-  }
-}
-
 function propfindResponseXML(
   filename: string,
   content: string,
