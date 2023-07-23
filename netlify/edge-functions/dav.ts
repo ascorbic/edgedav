@@ -7,8 +7,9 @@ export default async function handler(
   context: Context,
 ): Promise<Response | void> {
   const { method, url } = request;
-  console.log(await context.blobs?.get('dav'))
-  await context.blobs?.put('dav', new Date().toISOString())
+  console.log(context)
+  console.log(await context.blobs?.get('dav2'))
+  await context.blobs?.put('dav2', new Date().toISOString())
   console.log({ method, url });
   switch (request.method) {
     case "OPTIONS":
