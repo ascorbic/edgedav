@@ -1,8 +1,14 @@
 // deno-lint-ignore-file require-await
-import { Config } from "https://edge.netlify.com/";
+import { Context, Config } from "https://deploy-preview-243--edge.netlify.app";
 
-export default async function handler(request: Request): Promise<Response | void> {
+const ONE_GIG = 1024 * 1024 * 1024; // 1GB in bytes
+export default async function handler(
+  request: Request,
+  context: Context,
+): Promise<Response | void> {
   const { method, url } = request;
+  console.log(await context.blobs?.get('dav'))
+  await context.blobs?.put('dav', new Date().toISOString())
   console.log({ method, url });
   switch (request.method) {
     case "OPTIONS":
@@ -14,16 +20,42 @@ export default async function handler(request: Request): Promise<Response | void
     case "UNLOCK":
       return handleUnlock(request);
     case "GET":
-      // handled by the static site
-      return;
+      return handleGet(request);
+    case "PUT":
+      return handlePut(request);
+
     default:
       return new Response("Method Not Allowed", { status: 405 });
   }
 }
 
+function handleGet(request: Request) {
+  console.log("GET Headers: ", request.headers);
+  const path = new URL(request.url).pathname;
+  if(path === "/") {
+    return
+  }
+  if (path !== "/readme.txt") {
+    return new Response("Not Found", { status: 404 });
+  }
+}
+
+async function handlePut(request: Request): Promise<Response> {
+  console.log("PUT Headers: ", request.headers);
+  const path = new URL(request.url).pathname;
+  if(!path.endsWith('.ts') && !path.endsWith('.m3u8')) {
+    // method not allowed
+    return new Response(null, { status: 405 });
+  }
+
+  // Assuming successful operation
+  // For real operation, you would need to write the file and handle possible failures
+  return new Response(null, { status: 201 });
+}
+
 async function handleOptions(request: Request): Promise<Response> {
   const headers = new Headers();
-  headers.set("Allow", "OPTIONS, DELETE, LOCK, UNLOCK, GET");
+  headers.set("Allow", "OPTIONS, DELETE, LOCK, UNLOCK, GET, PUT, PROPFIND");
   headers.set("DAV", "1,2");
   return new Response(null, { status: 200, headers: headers });
 }
@@ -46,39 +78,70 @@ async function handleUnlock(request: Request): Promise<Response> {
   return new Response(null, { status: 204 });
 }
 
-function propfindResponseXML(
-  filename: string,
-  content: string,
-  isCollection: boolean,
-): string {
-  const encoder = new TextEncoder();
-  const contentLength = encoder.encode(content).length;
-  return '<?xml version="1.0" encoding="utf-8" ?>' +
-    '<D:multistatus xmlns:D="DAV:">' +
-    (isCollection
-      ? "<D:response>" +
-        "<D:href>/</D:href>" +
-        "<D:propstat>" +
-        "<D:prop>" +
-        "<D:resourcetype><D:collection/></D:resourcetype>" +
-        "</D:prop>" +
-        "<D:status>HTTP/1.1 200 OK</D:status>" +
-        "</D:propstat>" +
-        "</D:response>"
-      : "") +
-    "<D:response>" +
-    `<D:href>/${filename}</D:href>` +
-    "<D:propstat>" +
-    "<D:prop>" +
-    "<D:resourcetype/>" +
-    `<D:getcontentlength>${contentLength}</D:getcontentlength>` +
-    "<D:getcontenttype>text/plain</D:getcontenttype>" +
-    "</D:prop>" +
-    "<D:status>HTTP/1.1 200 OK</D:status>" +
-    "</D:propstat>" +
-    "</D:response>" +
-    "</D:multistatus>";
+interface DavResponseObject {
+  filename: string;
+  contentLength?: number;
+  contentType?: string;
+  collection?: boolean;
+  quotaAvailableBytes?: number;
 }
+
+function generateResponseXml(
+  {
+    filename,
+    contentLength,
+    contentType,
+    collection,
+    quotaAvailableBytes = ONE_GIG,
+  }: DavResponseObject,
+): string {
+  return `<D:response>
+    <D:href>/${filename}</D:href>
+    <D:propstat>
+      <D:prop>
+        ${
+    contentLength
+      ? `<D:getcontentlength>${contentLength}</D:getcontentlength>`
+      : ""
+  }
+        ${
+    contentType ? `<D:getcontenttype>${contentType}</D:getcontenttype>` : ""
+  }
+        <D:quota-available-bytes>${quotaAvailableBytes}</D:quota-available-bytes>
+        ${
+    collection
+      ? "<D:resourcetype><D:collection/></D:resourcetype>"
+      : "<D:resourcetype/>"
+  }
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>`;
+}
+
+function generateMultiResponseXml(
+  davResponseObjects: DavResponseObject[],
+): string {
+  return `<?xml version="1.0" encoding="utf-8" ?>
+  <D:multistatus xmlns:D="DAV:">
+    ${davResponseObjects.map(generateResponseXml).join("")}
+  </D:multistatus>`;
+}
+
+const files: Record<string, DavResponseObject> = {
+  "/": {
+    filename: "/",
+    collection: true,
+  },
+  "/readme.txt": {
+    filename: "readme.txt",
+    contentLength: 11,
+    contentType: "text/plain",
+  },
+  "/.metadata_never_index_unless_rootfs": {
+    filename: ".metadata_never_index_unless_rootfs",
+  },
+};
 
 async function handlePropfind(request: Request): Promise<Response> {
   const headers = new Headers();
@@ -87,21 +150,18 @@ async function handlePropfind(request: Request): Promise<Response> {
 
   headers.set("Content-Type", "application/xml");
 
-  switch (path) {
-    case "/": {
-      const body = propfindResponseXML("readme.txt", "hello world", true);
-      return new Response(body, { status: 207, headers: headers });
-    }
-    case "/readme.txt": {
-      const body = propfindResponseXML("readme.txt", "hello world", false);
-      return new Response(body, { status: 207, headers: headers });
-    }
-    default:
-      // return a 404 Not Found for any other path
-      return new Response("Not Found", { status: 404 });
+  if (path === "/") {
+    const responseXml = generateMultiResponseXml(Object.values(files));
+    return new Response(responseXml, { status: 207, headers });
   }
+  const file = files[path];
+  if (!file) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const responseXml = generateMultiResponseXml([file]);
+  return new Response(responseXml, { status: 207, headers });
 }
 
 export const config: Config = {
-  path: ["/", "/readme.txt"],
+  path: "/*",
 };
