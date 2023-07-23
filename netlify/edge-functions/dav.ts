@@ -1,15 +1,19 @@
 // deno-lint-ignore-file require-await
-import { Context, Config } from "https://deploy-preview-243--edge.netlify.app";
+import { Config, Context } from "https://deploy-preview-243--edge.netlify.app";
 
 const ONE_GIG = 1024 * 1024 * 1024; // 1GB in bytes
 export default async function handler(
   request: Request,
   context: Context,
 ): Promise<Response | void> {
+  let start = Date.now();
   const { method, url } = request;
-  console.log(context)
-  console.log(await context.blobs?.get('dav2').catch((e:unknown) => console.error(e)))
-  await context.blobs?.set('dav2', new Date().toISOString())
+  console.log(
+    await context.blobs?.get("dav2").catch((e: unknown) => console.error(e)),
+  );
+  console.log("get", Date.now() - start);
+  await context.blobs?.set("dav2", new Date().toISOString());
+  console.log("set", Date.now() - start);
   console.log({ method, url });
   switch (request.method) {
     case "OPTIONS":
@@ -20,8 +24,11 @@ export default async function handler(
       return handleLock(request);
     case "UNLOCK":
       return handleUnlock(request);
-    case "GET":
-      return handleGet(request);
+    case "GET": {
+      const ret = handleGet(request);
+      console.log("serve", Date.now() - start);
+      return ret;
+    }
     case "PUT":
       return handlePut(request);
 
@@ -33,8 +40,8 @@ export default async function handler(
 function handleGet(request: Request) {
   console.log("GET Headers: ", request.headers);
   const path = new URL(request.url).pathname;
-  if(path === "/") {
-    return
+  if (path === "/") {
+    return;
   }
   if (path !== "/readme.txt") {
     return new Response("Not Found", { status: 404 });
@@ -44,7 +51,7 @@ function handleGet(request: Request) {
 async function handlePut(request: Request): Promise<Response> {
   console.log("PUT Headers: ", request.headers);
   const path = new URL(request.url).pathname;
-  if(!path.endsWith('.ts') && !path.endsWith('.m3u8')) {
+  if (!path.endsWith(".ts") && !path.endsWith(".m3u8")) {
     // method not allowed
     return new Response(null, { status: 405 });
   }
