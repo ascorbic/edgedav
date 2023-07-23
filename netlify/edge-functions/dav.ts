@@ -6,12 +6,13 @@ export default async function handler(
   request: Request,
   context: Context,
 ): Promise<Response | void> {
-  let start = Date.now();
   const { method, url } = request;
+  let start = Date.now();
   console.log(
-    await context.blobs?.get("dav2").catch((e: unknown) => console.error(e)),
+    await context.blobs?.get("dav2").catch((e: unknown) => console.error('failed to get', e)),
   );
   console.log("get", Date.now() - start);
+  start = Date.now();
   await context.blobs?.set("dav2", new Date().toISOString());
   console.log("set", Date.now() - start);
   console.log({ method, url });
@@ -25,9 +26,7 @@ export default async function handler(
     case "UNLOCK":
       return handleUnlock(request);
     case "GET": {
-      const ret = handleGet(request);
-      console.log("serve", Date.now() - start);
-      return ret;
+      return handleGet(request);
     }
     case "PUT":
       return handlePut(request);
