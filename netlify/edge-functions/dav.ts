@@ -9,7 +9,7 @@ export default async function handler(
   const { method, url } = request;
   console.log(context)
   console.log(await context.blobs?.get('dav2'))
-  await context.blobs?.put('dav2', new Date().toISOString())
+  await context.blobs?.set('dav2', new Date().toISOString())
   console.log({ method, url });
   switch (request.method) {
     case "OPTIONS":
