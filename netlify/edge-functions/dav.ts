@@ -8,7 +8,7 @@ export default async function handler(
 ): Promise<Response | void> {
   const { method, url } = request;
   console.log(context)
-  console.log(await context.blobs?.get('dav2'))
+  console.log(await context.blobs?.get('dav2').catch((e:unknown) => console.error(e)))
   await context.blobs?.set('dav2', new Date().toISOString())
   console.log({ method, url });
   switch (request.method) {
